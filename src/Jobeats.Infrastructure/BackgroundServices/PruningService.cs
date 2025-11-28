@@ -1,4 +1,5 @@
 using Jobeats.Core.Interfaces;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -50,16 +51,29 @@ public class PruningService : BackgroundService
     private async Task PruneOldDataAsync(CancellationToken cancellationToken)
     {
         using var scope = _serviceProvider.CreateScope();
+        var checkRepository = scope.ServiceProvider.GetRequiredService<ICheckRepository>();
         var pingRepository = scope.ServiceProvider.GetRequiredService<IPingRepository>();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Jobeats.Infrastructure.Data.JobeatsDbContext>();
 
         _logger.LogInformation("Starting data pruning, keeping last {Count} pings per check", _keepPingsPerCheck);
 
-        // Get all checks and prune their old pings
-        // In a production system, this would be more efficient with batch operations
-        // For now, we'll iterate through checks
+        // Get all check IDs from the database
+        var checkIds = await dbContext.Checks.Select(c => c.Id).ToListAsync(cancellationToken);
         
-        // This is a simplified implementation - in production you'd want to use
-        // a more efficient approach with batched queries
-        _logger.LogInformation("Data pruning completed");
+        var totalPruned = 0;
+        foreach (var checkId in checkIds)
+        {
+            try
+            {
+                var pruned = await pingRepository.DeleteOldPingsAsync(checkId, _keepPingsPerCheck, cancellationToken);
+                totalPruned += pruned;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error pruning pings for check {CheckId}", checkId);
+            }
+        }
+
+        _logger.LogInformation("Data pruning completed, removed {Count} old pings", totalPruned);
     }
 }

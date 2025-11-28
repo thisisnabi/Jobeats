@@ -102,8 +102,14 @@ public class RecordPingCommandHandler : IRequestHandler<RecordPingCommand, Recor
     
     private static bool ShouldCreateFlip(CheckStatus oldStatus, CheckStatus newStatus)
     {
-        // Only create flips for significant status changes
-        return (oldStatus != CheckStatus.New && newStatus == CheckStatus.Down) || // down transition
-               (oldStatus == CheckStatus.Down && newStatus == CheckStatus.Up); // recovery
+        // Create flips for significant status changes that require notifications
+        return oldStatus != newStatus && (
+            // Any transition to Down (failure)
+            newStatus == CheckStatus.Down ||
+            // Any transition to Up (recovery or first success)
+            newStatus == CheckStatus.Up ||
+            // Started -> any final state (timeout tracking)
+            (oldStatus == CheckStatus.Started && (newStatus == CheckStatus.Down || newStatus == CheckStatus.Up))
+        );
     }
 }
